@@ -393,7 +393,11 @@ class ConversationViewController: BaseViewController {
         }
     }
 
-    private lazy var moreView: ConversationMoreView = ConversationMoreView()
+    private lazy var moreView: ConversationMoreView = {
+        let view = ConversationMoreView()
+        view.isMyFeed = self.conversation.withGroup?.withFeed?.creator?.isMe ?? false
+        return view
+    }()
 
     private lazy var moreMessageTypesView: MoreMessageTypesView = {
 
@@ -878,7 +882,7 @@ class ConversationViewController: BaseViewController {
             //view.addSubview(conversationFPSLabel)
         #endif
     }
-    
+
     override func viewWillAppear(animated: Bool) {
         super.viewWillAppear(animated)
 

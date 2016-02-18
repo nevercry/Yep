@@ -43,6 +43,20 @@ class ConversationsViewController: SegueViewController {
         }
     }
 
+    private var unreadMessagesCount: Int = 0 {
+        willSet {
+            dispatch_async(dispatch_get_main_queue()) { [weak self] in
+                if newValue > 0 {
+                    self?.navigationItem.title = "Yep(\(newValue))"
+                } else {
+                    self?.navigationItem.title = "Yep"
+                }
+            }
+
+            println("unreadMessagesCount: \(unreadMessagesCount)")
+        }
+    }
+
     private lazy var noConversationFooterView: InfoView = InfoView(NSLocalizedString("Have a nice day!", comment: ""))
 
     private var noConversation = false {
@@ -136,7 +150,9 @@ class ConversationsViewController: SegueViewController {
         realmNotificationToken = realm.addNotificationBlock { [weak self] notification, realm in
             if let strongSelf = self {
 
-                let haveOneToOneUnreadMessages = countOfUnreadMessagesInRealm(realm, withConversationType: .OneToOne) > 0
+                strongSelf.unreadMessagesCount = countOfUnreadMessagesInRealm(realm, withConversationType: .OneToOne)
+
+                let haveOneToOneUnreadMessages = strongSelf.unreadMessagesCount > 0
 
                 strongSelf.haveUnreadMessages = haveOneToOneUnreadMessages || (countOfUnreadMessagesInRealm(realm, withConversationType: .Group) > 0)
 
@@ -148,8 +164,10 @@ class ConversationsViewController: SegueViewController {
             YepLocationService.turnOn()
         }
 
+        cacheInAdvance()
+
         #if DEBUG
-//            view.addSubview(conversationsFPSLabel)
+            //view.addSubview(conversationsFPSLabel)
         #endif
     }
 
@@ -157,12 +175,19 @@ class ConversationsViewController: SegueViewController {
 
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0)) {
 
-            // 聊天界面的小头像
+            // 最近一天活跃的好友
 
-            for user in normalUsers() {
+            for user in normalFriends().filter("lastSignInUnixTime > %@", NSDate().timeIntervalSince1970 - 60*60*24) {
 
-                let userAvatar = UserAvatar(userID: user.userID, avatarStyle: nanoAvatarStyle)
-                AvatarPod.wakeAvatar(userAvatar, completion: { _, _, _ in })
+                do {
+                    let userAvatar = UserAvatar(userID: user.userID, avatarURLString: user.avatarURLString, avatarStyle: miniAvatarStyle)
+                    AvatarPod.wakeAvatar(userAvatar, completion: { _, _, _ in })
+                }
+
+                do {
+                    let userAvatar = UserAvatar(userID: user.userID, avatarURLString: user.avatarURLString, avatarStyle: nanoAvatarStyle)
+                    AvatarPod.wakeAvatar(userAvatar, completion: { _, _, _ in })
+                }
             }
 
             /*
@@ -357,6 +382,26 @@ extension ConversationsViewController: UITableViewDataSource, UITableViewDelegat
 
         case Section.FeedConversation.rawValue:
             let cell = tableView.dequeueReusableCellWithIdentifier(feedConversationDockCellID) as! FeedConversationDockCell
+            return cell
+
+        case Section.Conversation.rawValue:
+            let cell = tableView.dequeueReusableCellWithIdentifier(cellIdentifier) as! ConversationCell
+            return cell
+            
+        default:
+            return UITableViewCell()
+        }
+    }
+
+    func tableView(tableView: UITableView, willDisplayCell cell: UITableViewCell, forRowAtIndexPath indexPath: NSIndexPath) {
+
+        switch indexPath.section {
+
+        case Section.FeedConversation.rawValue:
+
+            guard let cell = cell as? FeedConversationDockCell else {
+                break
+            }
 
             cell.haveGroupUnreadMessages = countOfUnreadMessagesInRealm(realm, withConversationType: ConversationType.Group) > 0
 
@@ -376,10 +421,11 @@ extension ConversationsViewController: UITableViewDataSource, UITableViewDelegat
                 cell.chatLabel.text = NSLocalizedString("No messages yet.", comment: "")
             }
 
-            return cell
-
         case Section.Conversation.rawValue:
-            let cell = tableView.dequeueReusableCellWithIdentifier(cellIdentifier) as! ConversationCell
+
+            guard let cell = cell as? ConversationCell else {
+                break
+            }
 
             if let conversation = conversations[safe: indexPath.row] {
 
@@ -388,10 +434,28 @@ extension ConversationsViewController: UITableViewDataSource, UITableViewDelegat
                 cell.configureWithConversation(conversation, avatarRadius: radius, tableView: tableView, indexPath: indexPath)
             }
             
-            return cell
-            
         default:
-            return UITableViewCell()
+            break
+        }
+    }
+
+    func tableView(tableView: UITableView, didEndDisplayingCell cell: UITableViewCell, forRowAtIndexPath indexPath: NSIndexPath) {
+
+        switch indexPath.section {
+
+        case Section.FeedConversation.rawValue:
+            break
+
+        case Section.Conversation.rawValue:
+
+            guard let cell = cell as? ConversationCell else {
+                return
+            }
+
+            cell.avatarImageView.image = nil
+
+        default:
+            break
         }
     }
 

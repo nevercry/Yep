@@ -37,6 +37,8 @@ class FeedsViewController: BaseViewController {
     @IBOutlet weak var feedsTableView: UITableView!
     @IBOutlet private weak var activityIndicator: UIActivityIndicatorView!
 
+    private var selectedIndexPathForMenu: NSIndexPath?
+
     private var filterBarItem: UIBarButtonItem?
     
     private lazy var filterView: DiscoverFilterView = DiscoverFilterView()
@@ -230,8 +232,11 @@ class FeedsViewController: BaseViewController {
     }
     private static var layoutPool = LayoutPool()
 
+    private var needShowDistance: Bool = false
     private var feedSortStyle: FeedSortStyle = .Match {
         didSet {
+            needShowDistance = (feedSortStyle == .Distance)
+
             feeds = []
             feedsTableView.reloadData()
 
@@ -247,6 +252,8 @@ class FeedsViewController: BaseViewController {
     //var originalNavigationControllerDelegate: UINavigationControllerDelegate?
     
     deinit {
+
+        NSNotificationCenter.defaultCenter().removeObserver(self)
 
         feedsTableView?.delegate = nil
 
@@ -272,6 +279,10 @@ class FeedsViewController: BaseViewController {
         }
 
         title = NSLocalizedString("Feeds", comment: "")
+
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: "didRecieveMenuWillShowNotification:", name: UIMenuControllerWillShowMenuNotification, object: nil)
+
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: "didRecieveMenuWillHideNotification:", name: UIMenuControllerWillHideMenuNotification, object: nil)
 
         if skill != nil {
             navigationItem.titleView = skillTitleView
@@ -977,6 +988,8 @@ extension FeedsViewController: UITableViewDataSource, UITableViewDelegate {
                 return
             }
 
+            cell.needShowDistance = needShowDistance
+
             cell.tapAvatarAction = { [weak self] cell in
                 if let indexPath = tableView.indexPathForCell(cell) { // 不直接捕捉 indexPath
                     println("tapAvatarAction indexPath: \(indexPath.section), \(indexPath.row)")
@@ -1414,6 +1427,64 @@ extension FeedsViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(tableView: UITableView, commitEditingStyle editingStyle: UITableViewCellEditingStyle, forRowAtIndexPath indexPath: NSIndexPath) {
     }
 
+    // MARK: Copy Message
+
+    @objc private func didRecieveMenuWillHideNotification(notification: NSNotification) {
+
+        selectedIndexPathForMenu = nil
+    }
+
+    @objc private func didRecieveMenuWillShowNotification(notification: NSNotification) {
+
+        guard let menu = notification.object as? UIMenuController, selectedIndexPathForMenu = selectedIndexPathForMenu, cell = feedsTableView.cellForRowAtIndexPath(selectedIndexPathForMenu) as? FeedBasicCell else {
+            return
+        }
+
+        let bubbleFrame = cell.convertRect(cell.messageTextView.frame, toView: view)
+
+        NSNotificationCenter.defaultCenter().removeObserver(self, name: UIMenuControllerWillShowMenuNotification, object: nil)
+
+        menu.setTargetRect(bubbleFrame, inView: view)
+        menu.setMenuVisible(true, animated: true)
+
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: "didRecieveMenuWillShowNotification:", name: UIMenuControllerWillShowMenuNotification, object: nil)
+
+        feedsTableView.deselectRowAtIndexPath(selectedIndexPathForMenu, animated: true)
+    }
+
+    func tableView(tableView: UITableView, shouldShowMenuForRowAtIndexPath indexPath: NSIndexPath) -> Bool {
+
+        defer {
+            selectedIndexPathForMenu = indexPath
+        }
+
+        guard let _ = tableView.cellForRowAtIndexPath(indexPath) as? FeedBasicCell else {
+            return false
+        }
+
+        return true
+    }
+
+    func tableView(tableView: UITableView, canPerformAction action: Selector, forRowAtIndexPath indexPath: NSIndexPath, withSender sender: AnyObject?) -> Bool {
+
+        if action == "copy:" {
+            return true
+        }
+
+        return false
+    }
+
+    func tableView(tableView: UITableView, performAction action: Selector, forRowAtIndexPath indexPath: NSIndexPath, withSender sender: AnyObject?) {
+
+        guard let cell = tableView.cellForRowAtIndexPath(indexPath) as? FeedBasicCell else {
+            return
+        }
+
+        if action == "copy:" {
+            UIPasteboard.generalPasteboard().string = cell.messageTextView.text
+        }
+    }
+
     // MARK: UIScrollViewDelegate
 
     func scrollViewDidScroll(scrollView: UIScrollView) {
@@ -1474,7 +1545,8 @@ extension FeedsViewController: AVAudioPlayerDelegate {
             setAudioPlayedDuration(0, ofFeedAudio: playingFeedAudio)
             println("setAudioPlayedDuration to 0")
         }
+
+        YepAudioService.sharedManager.resetToDefault()
     }
 }
-
 
